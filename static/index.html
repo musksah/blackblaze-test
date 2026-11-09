@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B2 File Describer</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: .4rem; }
+    button { margin-top: .5rem; padding: .4rem 1rem; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #result { white-space: pre-wrap; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
+    dt { font-weight: 600; }
+    dd { margin: 0; word-break: break-word; }
+    .described { color: #137333; } .stored { color: #b06000; } .failed { color: #c5221f; }
+    img { max-width: 100%; max-height: 240px; margin-top: .5rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>B2 File Describer</h1>
+  <p>Store a file in Backblaze B2 and attach a short AI description to it.</p>
+
+  <section>
+    <h2>Upload a file</h2>
+    <input type="file" id="file">
+    <br><button id="upload">Upload</button>
+  </section>
+
+  <section>
+    <h2>Or use a path on the server</h2>
+    <input type="text" id="path" placeholder="samples/notes.txt">
+    <button id="ingest">Store &amp; describe</button>
+  </section>
+
+  <section>
+    <h2>Result</h2>
+    <div id="result">Nothing yet.</div>
+    <img id="preview" hidden alt="">
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function show(r) {
+  const rows = [
+    ["File", r.file_name], ["Size", fmtSize(r.size_bytes || 0)], ["Type", r.content_type],
+    ["Status", `<span class="${esc(r.status)}">${esc(r.status)}</span>`],
+    ["Description", r.description ? esc(r.description) : "—"],
+  ];
+  if (r.key) rows.push(["B2 key", `<a href="/api/files/${encodeURI(r.key)}" target="_blank">${esc(r.key)}</a>`]);
+  if (r.error) rows.push(["Note", `<span class="failed">${esc(r.error)}</span>`]);
+  $("result").innerHTML = "<dl>" + rows.map(([k, v]) => `<dt>${k}</dt><dd>${k === "Status" || k === "B2 key" || k === "Note" || k === "Description" ? v : esc(v)}</dd>`).join("") + "</dl>";
+}
+
+async function send(button, request) {
+  document.querySelectorAll("button").forEach(b => b.disabled = true);
+  $("result").textContent = "Working… uploading and asking Claude for a description.";
+  try {
+    const res = await request();
+    const body = await res.json().catch(() => ({status: "failed", error: `HTTP ${res.status}`}));
+    show(body.detail ? {status: "failed", error: JSON.stringify(body.detail)} : body);
+  } catch (e) {
+    show({status: "failed", error: e.message});
+  } finally {
+    document.querySelectorAll("button").forEach(b => b.disabled = false);
+  }
+}
+
+$("upload").onclick = () => {
+  const f = $("file").files[0];
+  if (!f) return show({status: "failed", error: "Choose a file first."});
+  const preview = $("preview");
+  preview.hidden = !f.type.startsWith("image/");
+  if (!preview.hidden) preview.src = URL.createObjectURL(f);
+  const form = new FormData();
+  form.append("file", f);
+  send($("upload"), () => fetch("/api/files", {method: "POST", body: form}));
+};
+
+$("ingest").onclick = () => {
+  const path = $("path").value.trim();
+  if (!path) return show({status: "failed", error: "Enter a path first."});
+  $("preview").hidden = true;
+  send($("ingest"), () => fetch("/api/files/local", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({path}),
+  }));
+};
+</script>
+</body>
+</html>

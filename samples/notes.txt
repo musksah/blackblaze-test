@@ -1,0 +1,6 @@
+Team sync — 9 Nov
+
+- The upload service now stores files in Backblaze B2 and attaches an AI-written description as object metadata.
+- Open question: should we keep originals forever or add a 90-day lifecycle rule on the bucket?
+- Next steps: add batch uploads, and show image thumbnails in the web page using presigned URLs.
+- Owner for the lifecycle decision: infra team, due Friday.
